@@ -1,150 +1,109 @@
-// Импорт пакетов
-const gulp = require('gulp')
-const less = require('gulp-less')
-const stylus = require('gulp-stylus')
-const sass = require('gulp-sass')(require('sass'))
-const rename = require('gulp-rename')
-const cleanCSS = require('gulp-clean-css')
-const ts = require('gulp-typescript')
-//const coffee = require('gulp-coffee')
-const babel = require('gulp-babel')
-const uglify = require('gulp-uglify')
-const concat = require('gulp-concat')
-const sourcemaps = require('gulp-sourcemaps')
-const autoprefixer = require('gulp-autoprefixer')
-const imagemin = require('gulp-imagemin')
-const htmlmin = require('gulp-htmlmin')
-const size = require('gulp-size')
-//const gulppug = require('gulp-pug')
-const newer = require('gulp-newer')
-const browsersync = require('browser-sync').create()
-const del = require('del')
-const include = require('gulp-file-include')
+const {src, dest, watch, series, parallel} = require('gulp');
+const sync = require("browser-sync").create();
+const del = require("del");
 
-// Пути исходных файлов src и пути к результирующим файлам dest
-const paths = {
-    html: {
-        src: ['src/*.html', 'src/*.pug'],
-        dest: 'dist/'
-    },
-    styles: {
-        src: ['src/styles/**/*.sass', 'src/styles/**/*.scss', 'src/styles/**/*.styl', 'src/styles/**/*.less', 'src/styles/**/*.css'],
-        dest: 'dist/css/'
-    },
-    scripts: {
-        src: ['src/scripts/**/*.coffee', 'src/scripts/**/*.ts', 'src/scripts/**/*.js'],
-        dest: 'dist/js/'
-    },
-    images: {
-        src: 'src/img/**',
-        dest: 'dist/img/'
-    }
+// плагины
+const plumber = require("gulp-plumber");
+const rename = require("gulp-rename");
+const less = require('gulp-less');
+const csso = require('gulp-csso');
+const concat = require("gulp-concat");
+const notify = require("gulp-notify");
+const fileInclude = require("gulp-file-include");
+const htmlmin = require("gulp-htmlmin");
+const size = require("gulp-size");
+const babel = require("gulp-babel");
+const uglify = require("gulp-uglify");
+const imagemin = require("gulp-imagemin");
+
+const html = () => {
+    return src("./src/*.html")
+        .pipe(plumber({
+            errorHandler: notify.onError()
+        }))
+        .pipe(fileInclude())
+        .pipe(size({title: 'До сжатия'}))
+        .pipe(htmlmin({
+            collapseWhitespace: true
+        }))
+        .pipe(size({title: 'После сжатия'}))
+        .pipe(dest("./dist"))
+        .pipe(sync.stream())
 }
 
-// Очистить каталог dist, удалить все кроме изображений
-function clean() {
-    return del(['dist/*', '!dist/img'])
+const style = () => {
+    return src("./src/css/*.less", {sourcemaps: true})
+        .pipe(plumber({
+            errorHandler: notify.onError()
+        }))
+        .pipe(less({}))
+        .pipe(concat("style.css"))
+        .pipe(dest("./dist/css", {sourcemaps: true}))
+        .pipe(rename({suffix: ".min"}))
+        .pipe(csso())
+        .pipe(dest("./dist/css", {sourcemaps: true}))
+        .pipe(sync.stream())
 }
 
-// Обработка html и pug
-function html() {
-    return gulp.src(paths.html.src)
-        .pipe(include())
-        //.pipe(gulppug())
-        .pipe(htmlmin({collapseWhitespace: true}))
-        .pipe(size({
-            showFiles: true
+// js
+const js = () => {
+    return src("./src/js/*", {sourcemaps: true})
+        .pipe(plumber({
+            errorHandler: notify.onError()
         }))
-        .pipe(gulp.dest(paths.html.dest))
-        .pipe(browsersync.stream())
-}
-
-// Обработка препроцессоров стилей
-function styles() {
-    return gulp.src(paths.styles.src)
-        .pipe(sourcemaps.init())
-        //.pipe(less())
-        //.pipe(stylus())
-        .pipe(sass().on('error', sass.logError))
-        .pipe(autoprefixer({
-            cascade: false
-        }))
-        .pipe(cleanCSS({
-            level: 2
-        }))
-        .pipe(rename({
-            basename: 'style',
-            suffix: '.min'
-        }))
-        .pipe(sourcemaps.write('.'))
-        .pipe(size({
-            showFiles: true
-        }))
-        .pipe(gulp.dest(paths.styles.dest))
-        .pipe(browsersync.stream())
-}
-
-// Обработка Java Script, Type Script и Coffee Script
-function scripts() {
-    return gulp.src(paths.scripts.src)
-        .pipe(sourcemaps.init())
-        //.pipe(coffee({bare: true}))
-        /*
-        .pipe(ts({
-          noImplicitAny: true,
-          outFile: 'main.min.js'
-        }))
-        */
-        .pipe(babel({
-            presets: ['@babel/env']
-        }))
+        .pipe(babel())
         .pipe(uglify())
-        .pipe(concat('main.min.js'))
-        .pipe(sourcemaps.write('.'))
-        .pipe(size({
-            showFiles: true
-        }))
-        .pipe(gulp.dest(paths.scripts.dest))
-        .pipe(browsersync.stream())
+        .pipe(dest("./dist/js", {sourcemaps: true}))
+        .pipe(sync.stream())
 }
 
-// Сжатие изображений
-function img() {
-    return gulp.src(paths.images.src)
-        .pipe(newer(paths.images.dest))
+const img = () => {
+    return src("./src/img/*")
+        .pipe(plumber({
+            errorHandler: notify.onError()
+        }))
+        .pipe(dest("./dist/img"))
         .pipe(imagemin({
-            progressive: true
+            verbose: true
         }))
-        .pipe(size({
-            showFiles: true
-        }))
-        .pipe(gulp.dest(paths.images.dest))
+        .pipe(sync.stream())
 }
 
-// Отслеживание изменений в файлах и запуск лайв сервера
-function watch() {
-    browsersync.init({
+// delete
+const clear = () => {
+    return del('./dist');
+}
+
+
+// Server
+const server = () => {
+    sync.init({
         server: {
             baseDir: "./dist"
         },
 
         notify: false
-    })
-    gulp.watch(paths.html.dest).on('change', browsersync.reload)
-    gulp.watch(paths.html.src, html)
-    gulp.watch(paths.styles.src, styles)
-    gulp.watch(paths.scripts.src, scripts)
-    gulp.watch(paths.images.src, img)
+    });
 }
 
-// Таски для ручного запуска с помощью gulp clean, gulp html и т.д.
-exports.clean = clean
+// Watch
+const watcher = () => {
+    watch("./src/**/*.html", html);
+    watch("./src/css/*.less", style);
+    watch("./src/js/*.js", js);
+    watch("./src/img/*", img);
+}
 
-exports.html = html
-exports.styles = styles
-exports.scripts = scripts
-exports.img = img
-exports.watch = watch
+module.exports.js = js;
+module.exports.html = html;
+module.exports.watch = watcher;
+module.exports.clear = clear;
+module.exports.style = style;
+module.exports.img = img;
 
-// Таск, который выполняется по команде gulp
-exports.default = gulp.series(clean, gulp.parallel(html, styles, scripts, img), watch)
+// Сборка
+exports.default = series(
+    clear,
+    parallel(html, style, js, img),
+    parallel(watcher, server)
+);
